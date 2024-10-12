@@ -1,0 +1,97 @@
+version: '3'
+services:
+  # MongoDB: https://hub.docker.com/_/mongo/
+  mongodb:
+    image: mongo:6.0.14
+    networks: 
+      - graylog
+    volumes:
+      - graylog_mongo_data:/data/db
+
+  # OpenSearch: https://opensearch.org/docs/latest/install-and-configure/install-opensearch/docker/
+  opensearch:
+    image: opensearchproject/opensearch:2.12.0
+    networks: 
+      - graylog
+    volumes:
+      - graylog_os_data:/usr/share/opensearch/data
+    environment:
+      - http.host=0.0.0.0
+      - transport.host=localhost
+      - network.host=0.0.0.0
+      #- "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - "OPENSEARCH_JAVA_OPTS=-Xms1g -Xmx1g"
+      - "bootstrap.memory_lock=true"
+      - "discovery.type=single-node"
+      - "action.auto_create_index=false"
+      - "plugins.security.ssl.http.enabled=false"
+      - "plugins.security.disabled=true"
+      - OPENSEARCH_INITIAL_ADMIN_PASSWORD=!0Hm3le$@tTuM8uH)(*&^)
+    ulimits:
+      memlock:
+        hard: -1
+        soft: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    restart: "on-failure"
+    ports:
+      - "8999:8999/tcp"   # DataNode API
+      - "9200:9200/tcp"
+      - "9300:9300/tcp"
+
+  # Graylog: https://hub.docker.com/r/graylog/graylog/
+  graylog:
+    image: graylog/graylog:6.0       
+    networks:
+      - graylog
+    volumes:
+      - graylog_data:/usr/share/graylog/data
+    environment:
+      # - GRAYLOG_NODE_ID_FILE="/usr/share/graylog/data/config/node-id"
+      - GRAYLOG_HTTP_BIND_ADDRESS= 0.0.0.0:9000
+      - GRAYLOG_ELASTICSEARCH_HOSTS= http://opensearch:9200
+      # CHANGE ME (must be at least 16 characters)!
+      - GRAYLOG_PASSWORD_SECRET=!0Hm3le$@tTuM8uH)(*&^)
+      # Password: admin
+      - GRAYLOG_ROOT_PASSWORD_SHA2=8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
+      - GRAYLOG_HTTP_EXTERNAL_URI=http://127.0.0.1:9000/
+      - TZ=Asia/Jakarta
+      - GRAYLOG_ROOT_TIMEZONE=Asia/Jakarta
+    entrypoint: "/usr/bin/tini -- wait-for-it opensearch:9200 -- /docker-entrypoint.sh"
+    links:
+      - mongodb:mongo
+      - opensearch
+    restart: always
+    depends_on:
+      - mongodb
+      - opensearch
+    ports:
+      - "5044:5044/tcp"   # Beats
+      - "5140:5140/udp"   # Syslog
+      - "5140:5140/tcp"   # Syslog
+      - "5555:5555/tcp"   # RAW TCP
+      - "5555:5555/udp"   # RAW UDP
+      - "9000:9000/tcp"   # Server API
+      - "12201:12201/tcp" # GELF TCP
+      - "12201:12201/udp" # GELF UDP
+      #- "10000:10000/tcp" # Custom TCP port
+      #- "10000:10000/udp" # Custom UDP port
+      - "13301:13301/tcp" # Forwarder data
+      - "13302:13302/tcp" # Forwarder config
+
+networks: 
+  graylog: 
+    driver: bridge 
+
+# Volumes for persisting data, see https://docs.docker.com/engine/admin/volumes/volumes/
+volumes:
+  graylog_mongo_data:
+    external: true
+    #driver: local
+  graylog_os_data:
+    external: true
+    #driver: local
+  graylog_data:
+    external: true
+    #driver: local
